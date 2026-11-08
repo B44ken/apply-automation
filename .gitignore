@@ -1,0 +1,9 @@
+# Secrets and local state — never commit
+vault.json
+profile.json
+.pwprofile/
+.venv/
+shots/
+__pycache__/
+*.html
+*.log
