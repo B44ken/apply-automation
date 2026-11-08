@@ -518,6 +518,12 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["Yes"])
         elif "sponsor" in ll:
             pick(["Yes"] if country == "US" else ["No"])
+        elif "canadian" in ll and ("citizen" in ll
+                                   or "permanent resident" in ll):
+            pick(["Yes"] if country == "CA" else ["No"])
+        elif "u.s. citizen" in ll or "united states citizen" in ll or \
+                "us citizen" in ll:
+            pick(["No"])
         elif "authorized" in ll or "eligible to work" in ll or \
                 "legally" in ll and "work" in ll:
             pick(["Yes"] if country == "CA" else ["No"])
@@ -530,9 +536,20 @@ def answer_questions(page, profile, country, term, unhandled):
                                      or "official" in ll):
             pick(["No"])
         elif any(k in ll for k in ["conflict", "non-compete", "noncompete",
+                                   "non-competition", "non-disclosure",
                                    "non-solicit", "relative", "family member",
-                                   "previously employed", "worked at",
-                                   "worked for", "former employee"]):
+                                   "previously employed",
+                                   "previously been employed",
+                                   "worked at", "worked for",
+                                   "former employee",
+                                   "intellectual property",
+                                   "secondary employment",
+                                   "secondary non-",
+                                   "board of directors",
+                                   "board of advisors", "governing body",
+                                   "supplier employee", "contingent worker",
+                                   "subcontractor",
+                                   "interfere with your ability"]):
             pick(["No"])
         elif "18 years" in ll or "at least 18" in ll:
             pick(["Yes"])
@@ -726,7 +743,7 @@ def set_prompt(container, page, choices):
                         ms.press_sequentially(c, delay=50)
                     except Exception:
                         ms.fill(c)
-                    for _ in range(12):
+                    for _ in range(6):
                         page.wait_for_timeout(700)
                         hit = None
                         for o, t in visible_options():
@@ -738,6 +755,40 @@ def set_prompt(container, page, choices):
                             page.wait_for_timeout(900)
                             if chipped():
                                 return c
+                            break
+            except Exception:
+                pass
+            # Fallback 2b: some tenants render the list as a
+            # ReactVirtualized window (issearch=false): typing never
+            # filters; only ~13 options exist in the DOM at once.
+            # Scroll the list until the choice renders, then click it.
+            try:
+                for c in choices:
+                    lst = page.locator(
+                        '[data-automation-id="activeListContainer"]'
+                    ).first
+                    if lst.count() == 0:
+                        break
+                    lst.evaluate("(el) => { el.scrollTop = 0; }")
+                    page.wait_for_timeout(600)
+                    for _ in range(30):
+                        hit = None
+                        for o, t in visible_options():
+                            if t == c:
+                                hit = o
+                                break
+                        if hit is not None:
+                            hit.click()
+                            page.wait_for_timeout(900)
+                            if chipped():
+                                return c
+                            break
+                        moved = lst.evaluate(
+                            "(el) => { const y = el.scrollTop; "
+                            "el.scrollTop = y + 800; "
+                            "return el.scrollTop > y; }")
+                        page.wait_for_timeout(550)
+                        if not moved:
                             break
             except Exception:
                 pass
@@ -936,7 +987,14 @@ def fill_experience(page, profile):
                         [profile["degree"], "Bachelor's", "Bachelors"])
                     log(f"education: degree {picked}")
             elif suffix == "fieldOfStudy":
-                target = profile["field_of_study"]
+                # Tenants name this list differently: Altera offers
+                # "Computer and Information Science" but no plain
+                # "Computer Science". Try the exact name first, then
+                # the closest truthful equivalents in order.
+                fos_choices = [profile["field_of_study"],
+                               "Computer and Information Science",
+                               "Computer and Information Sciences",
+                               "Computer Science and Engineering"]
                 chips = container.locator(
                     '[data-automation-id="selectedItem"]')
                 texts = []
@@ -946,7 +1004,8 @@ def fill_experience(page, profile):
                             chips.nth(ci).inner_text(timeout=400).strip())
                     except Exception:
                         pass
-                if any(target.lower() in t.lower() for t in texts):
+                if any(a.lower() == t.lower() or a.lower() in t.lower()
+                       for t in texts for a in fos_choices):
                     pass  # already correct
                 else:
                     # Remove any wrong chip(s), then pick the target.
@@ -958,7 +1017,7 @@ def fill_experience(page, profile):
                             page.wait_for_timeout(500)
                         except Exception:
                             pass
-                    picked = set_prompt(container, page, [target])
+                    picked = set_prompt(container, page, fos_choices)
                     log(f"education: field of study -> {picked}")
             elif suffix == "gradeAverage":
                 inp = container.locator('input[type="text"]').first
