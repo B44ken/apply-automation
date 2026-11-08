@@ -502,19 +502,128 @@ def answer_questions(page, profile, country, term, unhandled):
             picked = set_prompt(row, page, choices)
             if picked:
                 return picked
-            # Radio group fallback: click the option with matching text.
+            # Radio group fallback: click the option whose OWN text is
+            # exactly the choice (a has_text match hits the question
+            # legend, which contains both "Yes" and "No").
             for c in choices:
                 try:
-                    opt = row.locator('[role="radio"], label',
-                                      has_text=c).first
-                    if opt.is_visible(timeout=600):
-                        opt.click()
-                        return c
+                    cands = row.locator('label, [role="radio"]')
+                    for i in range(cands.count()):
+                        el = cands.nth(i)
+                        try:
+                            t = el.inner_text(timeout=300).strip()
+                        except Exception:
+                            continue
+                        if t.lower() != c.lower():
+                            continue
+                        el.click()
+                        page.wait_for_timeout(700)
+                        checked = False
+                        try:
+                            checked = row.locator(
+                                'input[type="radio"]:checked').count() > 0
+                        except Exception:
+                            pass
+                        if not checked:
+                            try:
+                                checked = el.get_attribute(
+                                    "aria-checked") == "true"
+                            except Exception:
+                                pass
+                        if checked:
+                            return c
+                        # Try the input behind the label.
+                        try:
+                            fid = el.get_attribute("for")
+                            if fid:
+                                row.locator(f'input[id="{fid}"]').first \
+                                    .click()
+                                page.wait_for_timeout(500)
+                                if row.locator(
+                                        'input[type="radio"]:checked'
+                                ).count() > 0:
+                                    return c
+                        except Exception:
+                            pass
                 except Exception:
                     continue
             return None
         handled = True
-        if "relocat" in ll:
+        if "full time employment" in ll or "full-time employment" in ll:
+            pick(["Yes"] if country == "CA" else ["No"])
+        elif "most recent employer" in ll or "current employer" in ll:
+            filled = False
+            try:
+                ins = row.locator('input[type="text"], input:not([type]), '
+                                  'textarea')
+                for ii in range(ins.count()):
+                    cand = ins.nth(ii)
+                    try:
+                        if cand.is_visible(timeout=300):
+                            cand.fill(profile["current_employer"])
+                            filled = True
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            if not filled:
+                handled = False
+        elif "industry" in ll and "work experience" in ll:
+            pick(["Technology", "Software", "Information Technology",
+                  "Robotics", "Computer Software", "Engineering",
+                  "Automotive"])
+        elif "automated assessment tool" in ll or \
+                "automated employment decision" in ll:
+            # NYC AEDT notice: take the standard path (recruiter +
+            # automated tool), not the recruiter-only opt-out.
+            pick(["I request the application to be reviewed by recruiter "
+                  "and automated assessment tool.",
+                  "recruiter and automated assessment tool", "Yes"])
+        elif ll.startswith("national security agreement") or \
+                ll.startswith("restricted party screening"):
+            # Screening acknowledgments (Aptiv/Wind River): consent to
+            # mandatory citizenship / watchlist screening.
+            cb = row.locator('input[type="checkbox"]').first
+            try:
+                if cb.count() > 0:
+                    if not cb.is_checked():
+                        cb.check()
+                elif not pick(["I acknowledge", "Acknowledge",
+                               "I Certify", "I Understand", "I Agree",
+                               "Agree", "Yes"]):
+                    handled = False
+            except Exception:
+                handled = False
+        elif "countries of citizenship" in ll or \
+                "country or countries of citizenship" in ll:
+            filled = False
+            try:
+                ins = row.locator('input[type="text"], '
+                                  'input:not([type]), textarea')
+                for ii in range(ins.count()):
+                    cand = ins.nth(ii)
+                    try:
+                        if cand.is_visible(timeout=300):
+                            cand.fill("Canada")
+                            filled = True
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            if not filled:
+                handled = False
+        elif "legal permanent resident or a protected individual" in ll:
+            pick(["Not Applicable", "N/A", "No"])
+        elif "citizen of any other country" in ll or \
+                "citizen or national" in ll and \
+                "following countries" in ll:
+            pick(["No"])
+        elif "living in a country outside of your assigned work " \
+                "location" in ll:
+            pick(["No"])
+        elif "relocat" in ll:
             pick(["Yes"])
         elif "sponsor" in ll:
             pick(["Yes"] if country == "US" else ["No"])
@@ -566,8 +675,11 @@ def answer_questions(page, profile, country, term, unhandled):
         elif "consent" in ll or "privacy" in ll or "i agree" in ll:
             cb = row.locator('input[type="checkbox"]').first
             try:
-                if not cb.is_checked():
-                    cb.check()
+                if cb.count() > 0:
+                    if not cb.is_checked():
+                        cb.check()
+                elif not pick(["Yes", "I Agree", "Agree"]):
+                    handled = False
             except Exception:
                 handled = False
         else:
@@ -816,16 +928,129 @@ def set_prompt(container, page, choices):
         pass
     # Select-one: open the listbox and click the option.
     try:
+        inp0 = container.locator('input[type="text"]').first
         if has_btn:
             try:
                 btn.scroll_into_view_if_needed(timeout=3000)
             except Exception:
                 pass
             btn.click()
+        elif inp0.count() > 0:
+            inp0.click()
         else:
             open_prompt(page, container)
         page.wait_for_timeout(1200)
         picked = choose_option(page, choices)
+        if not picked:
+            # Source prompts ("How did you hear"): tenant option names
+            # vary ("Aptiv Career Website", "Online Job Board"...).
+            # Take the closest truthful visible option by substring
+            # preference instead of failing on exact names.
+            try:
+                aid = (container.get_attribute("data-automation-id")
+                       or "").lower()
+                lbl = container_label(container).lower()
+            except Exception:
+                aid, lbl = "", ""
+            if "source" in aid or "hear" in lbl:
+                def vis_opts():
+                    # Both UI generations: new UI uses promptOption;
+                    # classic UI renders li[role=option] in a ul listbox.
+                    opts = page.locator(
+                        '[data-automation-id="promptOption"], '
+                        'li[role="option"], '
+                        '[data-automation-id="menuItem"]')
+                    out = []
+                    for i in range(opts.count()):
+                        o = opts.nth(i)
+                        try:
+                            if o.is_visible(timeout=250):
+                                t = o.inner_text(
+                                    timeout=300).strip().replace(
+                                        "​", "")
+                                if t and t.lower() != "select one":
+                                    out.append((o, t))
+                        except Exception:
+                            continue
+                    return out
+
+                def btn_now():
+                    try:
+                        return btn.inner_text(timeout=600).strip()
+                    except Exception:
+                        return ""
+
+                vis = vis_opts()
+                if not vis:
+                    # New-UI prompts open from the search input, not
+                    # the caret button.
+                    try:
+                        if inp0.count() > 0:
+                            inp0.click()
+                            page.wait_for_timeout(1500)
+                            vis = vis_opts()
+                    except Exception:
+                        pass
+                log(f"source options visible: {[t for _, t in vis]}")
+                prefs = ["company website", "corporate website",
+                         "career", "website", "job board", "indeed",
+                         "linkedin", "internet", "online", "other"]
+
+                def try_hit(o):
+                    o.click()
+                    page.wait_for_timeout(900)
+                    cur = btn_now()
+                    if cur and cur.lower() != "select one":
+                        return cur
+                    # Category click may have expanded leaves instead.
+                    for o2, t2 in vis_opts():
+                        o2.click()
+                        page.wait_for_timeout(900)
+                        cur = btn_now()
+                        if cur and cur.lower() != "select one":
+                            return cur
+                        break
+                    return None
+
+                for pref in prefs:
+                    hit = next((o for o, t in vis
+                                if pref in t.lower()), None)
+                    if hit is not None:
+                        r = try_hit(hit)
+                        if r:
+                            return r
+                        break
+                # Virtualized list: scroll-hunt for a preference match.
+                try:
+                    lst = page.locator(
+                        '[data-automation-id="activeListContainer"]'
+                    ).first
+                    if lst.count() > 0:
+                        lst.evaluate("(el) => { el.scrollTop = 0; }")
+                        page.wait_for_timeout(500)
+                        for _ in range(25):
+                            vis = vis_opts()
+                            hit = None
+                            for pref in prefs:
+                                hit = next(
+                                    (o for o, t in vis
+                                     if pref in t.lower()), None)
+                                if hit is not None:
+                                    break
+                            if hit is not None:
+                                r = try_hit(hit)
+                                if r:
+                                    return r
+                                break
+                            moved = lst.evaluate(
+                                "(el) => { const y = el.scrollTop; "
+                                "el.scrollTop = y + 800; "
+                                "return el.scrollTop > y; }")
+                            page.wait_for_timeout(500)
+                            if not moved:
+                                break
+                except Exception:
+                    pass
         if not picked:
             # The click may have raced a re-render and never opened the
             # list. Reopen once and retry before falling to search.

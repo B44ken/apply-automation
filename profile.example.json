@@ -32,5 +32,6 @@
   "school_start": "",
   "sponsorship_note": "",
   "us_authorized": false,
-  "us_needs_sponsorship": false
+  "us_needs_sponsorship": false,
+  "current_employer": ""
 }
