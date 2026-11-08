@@ -562,7 +562,10 @@ def answer_questions(page, profile, country, term, unhandled):
         handled = True
         if "full time employment" in ll or "full-time employment" in ll:
             pick(["Yes"] if country == "CA" else ["No"])
-        elif "most recent employer" in ll or "current employer" in ll:
+        elif ("most recent employer" in ll or "current employer" in ll) \
+                and not any(k in ll for k in [
+                    "non-compet", "non-disclosure", "non-solicit",
+                    "agreement", "interfere", "contract"]):
             filled = False
             try:
                 ins = row.locator('input[type="text"], input:not([type]), '
@@ -686,7 +689,9 @@ def answer_questions(page, profile, country, term, unhandled):
                 "us citizen" in ll:
             pick(["No"])
         elif "authorized" in ll or "eligible to work" in ll or \
-                "legally" in ll and "work" in ll:
+                "right to work" in ll or \
+                ("legal" in ll and "work" in ll) or \
+                ("legally" in ll and "work" in ll):
             pick(["Yes"] if country == "CA" else ["No"])
         elif "co-op" in ll or "coop" in ll or "co op" in ll:
             pick(["Yes"])
@@ -701,6 +706,9 @@ def answer_questions(page, profile, country, term, unhandled):
                                    "non-solicit", "relative", "family member",
                                    "previously employed",
                                    "previously been employed",
+                                   "previously been directly employed",
+                                   "been directly employed",
+                                   "accepted an offer",
                                    "worked at", "worked for",
                                    "former employee",
                                    "intellectual property",
@@ -1224,8 +1232,24 @@ def fill_my_information(page, profile):
     # Country first: changing it re-renders the region prompt.
     for container in field_containers(page):
         label = container_label(container)
-        if label.lower().rstrip("?").strip() == "country":
+        cl = label.lower().rstrip("?").strip()
+        if cl == "country" or cl.startswith("country/region") or \
+                cl.startswith("country / region"):
             picked = set_prompt(container, page, [profile["country"]])
+            if not picked:
+                # Native <select> fallback (some tenants render the
+                # country picker as a real select element).
+                try:
+                    sel = container.locator("select").first
+                    if sel.count() > 0:
+                        try:
+                            sel.select_option(label=profile["country"])
+                            picked = profile["country"]
+                        except Exception:
+                            sel.select_option(value=profile["country"])
+                            picked = profile["country"]
+                except Exception:
+                    pass
             if picked:
                 log(f"my-info prompt 'Country': {picked}")
             page.wait_for_timeout(1500)
@@ -1238,7 +1262,8 @@ def fill_my_information(page, profile):
         if not label:
             continue
         ll = label.lower().rstrip("?").strip()
-        if ll == "country":
+        if ll == "country" or ll.startswith("country/region") or \
+                ll.startswith("country / region"):
             continue
         tkey = next((k for k in text_map if ll.startswith(k)), None)
         pkey = next((k for k in prompt_map if ll.startswith(k)), None)
@@ -1256,6 +1281,60 @@ def fill_my_information(page, profile):
             picked = set_prompt(container, page, prompt_map[pkey])
             if picked:
                 log(f"my-info prompt '{label}': {picked}")
+
+
+def pick_search_multiselect(container, page, choices):
+    """Type-and-Enter search multiselect (Intel school / field-of-study
+    widgets): suggestions only load after Enter is pressed. Tries each
+    choice in order; returns the picked choice or None."""
+    try:
+        if container.locator(
+                '[data-automation-id="selectedItem"]').count() > 0:
+            return "already-set"
+    except Exception:
+        pass
+    inp = container.locator("input").first
+    if inp.count() == 0:
+        return None
+    for choice in choices:
+        try:
+            inp.click()
+            inp.fill("")
+            inp.press_sequentially(choice, delay=40)
+        except Exception:
+            try:
+                inp.fill(choice)
+            except Exception:
+                continue
+        try:
+            inp.press("Enter")
+        except Exception:
+            pass
+        for _ in range(8):
+            page.wait_for_timeout(800)
+            opts = page.locator(
+                '[data-automation-id="promptOption"], li[role="option"]')
+            hit = None
+            for oi in range(opts.count()):
+                try:
+                    t = opts.nth(oi).inner_text(timeout=300).strip()
+                except Exception:
+                    continue
+                if t == choice:
+                    hit = opts.nth(oi)
+                    break
+            if hit is not None:
+                hit.click()
+                page.wait_for_timeout(900)
+                try:
+                    if container.locator(
+                            '[data-automation-id="selectedItem"]'
+                            ).count() > 0:
+                        return choice
+                except Exception:
+                    return choice
+                break
+    return None
 
 
 def fill_experience(page, profile):
@@ -1315,6 +1394,12 @@ def fill_experience(page, profile):
                 if inp.count() > 0 and not inp.input_value().strip():
                     inp.fill(profile["school"])
                     log("education: school filled")
+            elif suffix == "school":
+                # Search multiselect (Intel): the form's own
+                # instructions sanction 'Other' when unlisted.
+                picked = pick_search_multiselect(
+                    container, page, [profile["school"], "Other"])
+                log(f"education: school -> {picked}")
             elif suffix == "degree":
                 btn = container.locator(
                     'button[aria-haspopup="listbox"]').first
@@ -1356,6 +1441,11 @@ def fill_experience(page, profile):
                         except Exception:
                             pass
                     picked = set_prompt(container, page, fos_choices)
+                    if not picked:
+                        # Search-style widget (Intel): set_prompt's
+                        # generic path never presses Enter.
+                        picked = pick_search_multiselect(
+                            container, page, fos_choices)
                     log(f"education: field of study -> {picked}")
             elif suffix == "gradeAverage":
                 inp = container.locator('input[type="text"]').first
