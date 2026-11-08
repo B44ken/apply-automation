@@ -714,19 +714,31 @@ def set_prompt(container, page, choices):
                     if r:
                         return r
             # Fallback 2: long lists (e.g. Field of Study) only surface
-            # matches through the search box. Type the choice, click the
-            # exact match, verify the chip.
+            # matches through the search box. Type the choice with real
+            # keystrokes, poll for the exact match (search round-trips
+            # through the relay can take seconds), click, verify chip.
             try:
                 ms = ms_wrap.locator("input").first
                 for c in choices:
-                    ms.fill(c)
-                    page.wait_for_timeout(1600)
-                    for o, t in visible_options():
-                        if t == c:
-                            o.click()
+                    try:
+                        ms.click()
+                        ms.fill("")
+                        ms.press_sequentially(c, delay=50)
+                    except Exception:
+                        ms.fill(c)
+                    for _ in range(12):
+                        page.wait_for_timeout(700)
+                        hit = None
+                        for o, t in visible_options():
+                            if t == c:
+                                hit = o
+                                break
+                        if hit is not None:
+                            hit.click()
                             page.wait_for_timeout(900)
                             if chipped():
                                 return c
+                            break
             except Exception:
                 pass
             # Fallback 3 (LAST resort, source prompts only): walk the
@@ -900,18 +912,6 @@ def fill_experience(page, profile):
                 gpa.fill(profile["gpa"])
         except Exception:
             pass
-    # Field of Study: the resume parse often leaves it unselected.
-    for container in field_containers(page):
-        label = container_label(container)
-        if label and label.lower().startswith("field of study"):
-            try:
-                txt = container.inner_text(timeout=800)
-            except Exception:
-                txt = ""
-            if "0 items selected" in txt:
-                picked = set_prompt(container, page,
-                                    ["Computer Science"])
-                log(f"field of study: {picked}")
     # Education entries: fill whatever the parse left empty, and repair
     # a wrong Field of Study chip. Dispatched by field automation id.
     for container in field_containers(page):
@@ -946,9 +946,10 @@ def fill_experience(page, profile):
                             chips.nth(ci).inner_text(timeout=400).strip())
                     except Exception:
                         pass
-                if texts and not any(target.lower() in t.lower()
-                                      for t in texts):
-                    # Wrong chip(s) saved earlier: remove and re-pick.
+                if any(target.lower() in t.lower() for t in texts):
+                    pass  # already correct
+                else:
+                    # Remove any wrong chip(s), then pick the target.
                     for ci in range(chips.count()):
                         try:
                             rm = chips.nth(ci).locator(
@@ -958,19 +959,23 @@ def fill_experience(page, profile):
                         except Exception:
                             pass
                     picked = set_prompt(container, page, [target])
-                    log(f"education: field of study repaired -> {picked}")
+                    log(f"education: field of study -> {picked}")
             elif suffix == "gradeAverage":
                 inp = container.locator('input[type="text"]').first
                 if inp.count() > 0 and not inp.input_value().strip():
                     inp.fill(profile["gpa"])
                     log("education: GPA filled")
             elif suffix == "firstYearAttended":
-                inp = container.locator('input[type="text"]').first
+                inp = container.locator(
+                    '[data-automation-id="dateSectionYear-input"], '
+                    'input').first
                 if inp.count() > 0 and not inp.input_value().strip():
                     inp.fill(profile["school_start"])
                     log("education: first year filled")
             elif suffix == "lastYearAttended":
-                inp = container.locator('input[type="text"]').first
+                inp = container.locator(
+                    '[data-automation-id="dateSectionYear-input"], '
+                    'input').first
                 if inp.count() > 0 and not inp.input_value().strip():
                     inp.fill(profile["graduation_year"])
                     log("education: last year filled")
