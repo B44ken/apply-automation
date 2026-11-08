@@ -249,6 +249,7 @@ def set_dropdown_by_label(page, label_substr, choices):
 
 
 DECLINE_CHOICES = ["I do not wish to answer", "I do not wish to self-identify",
+                   "Do Not Wish To Disclose", "I do not wish to disclose",
                    "I do not want to answer", "Decline to self-identify",
                    "Decline", "Prefer not to say", "Prefer not to disclose",
                    "Choose not to disclose", "Not disclosed", "Not Specified",
@@ -421,6 +422,16 @@ def answer_questions(page, profile, country, term, unhandled):
                              "responsibilities", "location"]
         if any(ll.rstrip("*").strip().startswith(k)
                for k in EXPERIENCE_FIELDS):
+            continue
+        # Voluntary self-ID fields are fill_disclosures' job, whatever
+        # the label's phrasing ("What best describes your gender?").
+        # Same for the CC-305 form's Language/Name/Date/boxes rows.
+        if any(k in ll for k in ["gender", "race", "ethnic", "veteran",
+                                  "disability status", "sexual orientation",
+                                  "hispanic", "latino",
+                                  "check one of the boxes"]):
+            continue
+        if ll.rstrip("*").strip() in ("language", "name", "date"):
             continue
         # My Information / disclosure fields are other fillers' jobs;
         # never report them as unhandled questions.
@@ -614,6 +625,47 @@ def answer_questions(page, profile, country, term, unhandled):
                 pass
             if not filled:
                 handled = False
+        elif "country of birth" in ll:
+            # First-directed best-evidence value (profile), 2026-11-08.
+            cob = profile.get("country_of_birth", "")
+            if cob:
+                if not pick([cob]):
+                    filled = False
+                    try:
+                        ins = row.locator('textarea, input[type="text"], '
+                                          'input:not([type])')
+                        for ii in range(ins.count()):
+                            cand = ins.nth(ii)
+                            if cand.is_visible(timeout=300):
+                                cand.fill(cob)
+                                filled = True
+                                break
+                    except Exception:
+                        pass
+                    if not filled:
+                        handled = False
+            else:
+                handled = False
+        elif "spent more than 30 continuous days" in ll or \
+                "more than 30 continuous days" in ll:
+            tv = profile.get("extended_travel_30day", "")
+            if tv:
+                filled = False
+                try:
+                    ins = row.locator('input[type="text"], '
+                                      'input:not([type]), textarea')
+                    for ii in range(ins.count()):
+                        cand = ins.nth(ii)
+                        if cand.is_visible(timeout=300):
+                            cand.fill(tv)
+                            filled = True
+                            break
+                except Exception:
+                    pass
+                if not filled:
+                    handled = False
+            else:
+                handled = False
         elif "legal permanent resident or a protected individual" in ll:
             pick(["Not Applicable", "N/A", "No"])
         elif "citizen of any other country" in ll or \
@@ -714,6 +766,67 @@ def fill_disclosures(page, profile):
         if not label:
             continue
         ll = label.lower()
+        # US CC-305 disability self-ID form: language / name / date /
+        # one-of-three radio boxes (decline = "I do not want to answer").
+        bare = ll.rstrip("*").strip()
+        if bare == "language":
+            picked = set_prompt(row, page, ["English"])
+            log(f"disclosure 'Language': {picked}")
+            continue
+        if bare == "name":
+            inp = row.locator('input[type="text"], '
+                              'input:not([type])').first
+            try:
+                if inp.count() > 0 and not inp.input_value().strip():
+                    inp.fill(profile["first_name"] + " " +
+                             profile["last_name"])
+                    log("disclosure 'Name': filled")
+            except Exception:
+                pass
+            continue
+        if bare == "date":
+            import datetime
+            today = datetime.date.today()
+            try:
+                parts = {
+                    "dateSectionMonth-input": f"{today.month:02d}",
+                    "dateSectionDay-input": f"{today.day:02d}",
+                    "dateSectionYear-input": f"{today.year}",
+                }
+                done_any = False
+                for aid, val in parts.items():
+                    seg = row.locator(
+                        f'[data-automation-id="{aid}"]').first
+                    if seg.count() > 0 and not seg.input_value().strip():
+                        seg.fill(val)
+                        done_any = True
+                if not done_any:
+                    inp = row.locator('input').first
+                    if inp.count() > 0 and not inp.input_value().strip():
+                        inp.fill(today.strftime("%m/%d/%Y"))
+                log("disclosure 'Date': filled")
+            except Exception:
+                pass
+            continue
+        if "check one of the boxes" in ll:
+            target = "I do not want to answer"
+            try:
+                cands = row.locator('label, [role="radio"]')
+                for ci in range(cands.count()):
+                    el = cands.nth(ci)
+                    try:
+                        t = " ".join(
+                            el.inner_text(timeout=300).split())
+                    except Exception:
+                        continue
+                    if t.lower() == target.lower():
+                        el.click()
+                        page.wait_for_timeout(600)
+                        log("disclosure 'Disability': declined")
+                        break
+            except Exception:
+                pass
+            continue
         if any(k in ll for k in ["gender", "race", "ethnic", "veteran",
                                  "disability", "sex", "orientation",
                                  "hispanic", "latino"]):
@@ -1399,6 +1512,10 @@ def main():
                 # when their fields are absent.
                 fill_my_information(page, profile)
                 fill_experience(page, profile)
+                # Disclosures before questions: answer_questions must
+                # not report fields that fill_disclosures is about to
+                # set on this same step.
+                fill_disclosures(page, profile)
                 answer_questions(page, profile, args.country,
                                  args.term, unhandled)
                 if unhandled:
@@ -1409,7 +1526,6 @@ def main():
                     answer_questions(page, profile, args.country,
                                      args.term, retry_unhandled)
                     unhandled[:] = retry_unhandled
-                fill_disclosures(page, profile)
                 if step > 1:
                     submit = first_visible(
                         page, ['[data-automation-id="submit"]',
