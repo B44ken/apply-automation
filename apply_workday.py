@@ -2,7 +2,7 @@
 """
 Scripted Workday internship application driver (no browser-agent harness,
 no approval cards). Creates or reuses a tenant candidate account, applies
-with Autofill-with-Resume, walks the application steps under First's
+with Autofill-with-Resume, walks the application steps under the applicant's
 standing rules, submits, and prints a JSON result line.
 
 Passwords for created accounts are stored in a local vault file (0600)
@@ -950,7 +950,7 @@ def answer_questions(page, profile, country, term, unhandled):
             if not filled:
                 handled = False
         elif "country of birth" in ll:
-            # First-directed best-evidence value (profile), 2026-11-08.
+            # Applicant-directed best-evidence value (profile).
             cob = profile.get("country_of_birth", "")
             if cob:
                 if not pick([cob]):
@@ -1088,7 +1088,7 @@ def answer_questions(page, profile, country, term, unhandled):
                                   or "opportunities" in ll
                                   or "contact you" in ll):
             # Data-use consent (profile retention / contact about
-            # roles): First's standing rule is always consent.
+            # roles): the standing rule is always consent.
             # Tenants phrase the option verbosely (GE Vernova), so
             # try the long forms before bare "Yes".
             pick(["Yes, I consent", "I consent", "Yes, I agree",
@@ -1104,7 +1104,7 @@ def answer_questions(page, profile, country, term, unhandled):
                   "Within 2 months after offer acceptance",
                   "Immediately after offer acceptance"])
         elif "school location" in ll:
-            # Free-text school city/state (Salesforce: "City, ST"
+            # Free-text school city/state (e.g. "City, ST"
             # format - spell out the city, abbreviate the province).
             # Iterate inputs like the current-employer branch: the
             # single `tin` probe can miss this field's input.
@@ -1946,8 +1946,9 @@ def pick_search_multiselect(container, page, choices):
 
 def fill_experience(page, profile):
     strip_illegal_quotes(page)
-    # Blank company on the first job entry -> example.dev (resume
-    # parse quirk: his founder role parses with an empty company).
+    # Blank company on the first job entry -> the founder company
+    # named in profile["resume_company_fix"] (resume parse quirk:
+    # the founder role parses with an empty company).
     # New UI: formField-companyName containers; classic: company inputs.
     try:
         empties = []
@@ -1970,11 +1971,14 @@ def fill_experience(page, profile):
                     empties.append(legacy.nth(i))
             except Exception:
                 pass
-        # Does a exampleco entry exist (just repaired, or already
-        # filled on a resumed draft)? Its parse-gap companions
-        # (Job Title / From) are repaired below either way.
-        exampleco_entry = len(empties) == 1
-        if not exampleco_entry:
+        # Does a founder-company entry exist (just repaired, or
+        # already filled on a resumed draft)? Its parse-gap
+        # companions (Job Title / From) are repaired below either
+        # way.
+        company_fix = (profile.get("resume_company_fix") or "").strip()
+        company_root = company_fix.split(".")[0].lower()
+        founder_entry = len(empties) == 1 and bool(company_fix)
+        if not founder_entry and company_root:
             try:
                 for container in field_containers(page):
                     aid = container.get_attribute(
@@ -1982,19 +1986,19 @@ def fill_experience(page, profile):
                     if aid.replace("formField-", "") == "companyName":
                         inp = container.locator(
                             'input[type="text"]').first
-                        if inp.count() > 0 and "exampleco" in \
+                        if inp.count() > 0 and company_root in \
                                 inp.input_value().lower():
-                            exampleco_entry = True
+                            founder_entry = True
                             break
             except Exception:
                 pass
-        if len(empties) == 1:
-            empties[0].fill("example.dev")
-            log("fixed blank company -> example.dev")
-        if exampleco_entry:
+        if len(empties) == 1 and company_fix:
+            empties[0].fill(company_fix)
+            log("fixed blank company -> resume_company_fix")
+        if founder_entry:
             # The same parse gap leaves this entry's Job Title and
-            # From date empty on some tenants (Adobe). The resume
-            # states: Founder, example.dev, May 2026 - Present.
+            # From date empty on some tenants. The resume states:
+            # Founder, <founder company>, May 2026 - Present.
             # Transcribe exactly that for the first empty fields.
             for container in field_containers(page):
                 # Per-container try: one bad field must not abort
@@ -2141,9 +2145,10 @@ def fill_experience(page, profile):
                     log("education: last year filled")
         except Exception:
             pass
-    # Role Description repair (Baird): a required description on
-    # the exampleco entry can parse empty. Fill it with his
-    # documented facts only, matched by the entry's fkit group.
+    # Role Description repair: a required description on the
+    # founder-company entry can parse empty. Fill it with the
+    # documented text in profile["founder_role_description"],
+    # matched by the entry's fkit group.
     try:
         groups = {}
         for container in field_containers(page):
@@ -2164,15 +2169,18 @@ def fill_experience(page, profile):
                 cval = cin.input_value() if cin.count() else ""
             except Exception:
                 cval = ""
-            if "exampleco" not in cval.lower():
+            fix_root = (profile.get("resume_company_fix") or "")
+            fix_root = fix_root.split(".")[0].strip().lower()
+            role_desc = (profile.get("founder_role_description")
+                         or "").strip()
+            if not fix_root or not role_desc or \
+                    fix_root not in cval.lower():
                 continue
             ta = desc.locator("textarea").first
             try:
                 if ta.count() > 0 and not ta.input_value().strip():
-                    ta.fill("Founder of ExampleCo (example.dev), a "
-                            "robotics platform. Secured $X in "
-                            "funding.")
-                    log("experience: exampleco role description filled")
+                    ta.fill(role_desc)
+                    log("experience: founder role description filled")
             except Exception:
                 pass
     except Exception:

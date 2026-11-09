@@ -34,5 +34,7 @@
   "us_authorized": false,
   "us_needs_sponsorship": false,
   "current_employer": "",
-  "school_location": ""
+  "school_location": "",
+  "resume_company_fix": "",
+  "founder_role_description": ""
 }
