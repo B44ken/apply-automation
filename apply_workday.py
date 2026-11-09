@@ -1099,6 +1099,40 @@ def answer_questions(page, profile, country, term, unhandled):
             if not got:
                 got = pick_contains(row, page, "not worked")
             if not got:
+                # Click the option's text node directly (checkbox /
+                # radio lists render options as plain text rows).
+                try:
+                    t = row.get_by_text("have not worked",
+                                        exact=False).first
+                    if t.count() > 0:
+                        t.click()
+                        page.wait_for_timeout(700)
+                        got = "text-click"
+                except Exception:
+                    pass
+            if not got:
+                # Checkbox/radio input whose label says not-worked.
+                try:
+                    ins = row.locator('input[type="checkbox"], '
+                                      'input[type="radio"]')
+                    for i in range(ins.count()):
+                        el = ins.nth(i)
+                        lab = ""
+                        try:
+                            fid = el.get_attribute("id")
+                            if fid:
+                                lab = row.locator(
+                                    f'label[for="{fid}"]').first \
+                                    .inner_text(timeout=300)
+                        except Exception:
+                            pass
+                        if "not worked" in lab.lower():
+                            el.check(force=True, timeout=3000)
+                            got = lab.strip()
+                            break
+                except Exception:
+                    pass
+            if not got:
                 try:
                     cands = row.locator('label, [role="radio"]')
                     for i in range(cands.count()):
