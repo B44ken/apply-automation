@@ -1041,12 +1041,24 @@ def answer_questions(page, profile, country, term, unhandled):
         elif "school location" in ll:
             # Free-text school city/state (Salesforce: "City, ST"
             # format - spell out the city, abbreviate the province).
+            # Iterate inputs like the current-employer branch: the
+            # single `tin` probe can miss this field's input.
             loc = profile.get("school_location", "")
             filled = False
-            if loc and has_text:
+            if loc:
                 try:
-                    tin.fill(loc)
-                    filled = True
+                    ins = row.locator('input[type="text"], '
+                                      'input:not([type]), textarea')
+                    for ii in range(ins.count()):
+                        cand = ins.nth(ii)
+                        try:
+                            if cand.is_visible(timeout=300) and \
+                                    not cand.input_value().strip():
+                                cand.fill(loc)
+                                filled = True
+                                break
+                        except Exception:
+                            continue
                 except Exception:
                     pass
             if not filled:
