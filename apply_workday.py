@@ -1226,6 +1226,7 @@ def answer_questions(page, profile, country, term, unhandled):
                                    "employee or contractor",
                                    "accepted an offer",
                                    "worked at", "worked for",
+                                   "currently working at", "have you worked",
                                    "former employee",
                                    "intellectual property",
                                    "secondary employment",
