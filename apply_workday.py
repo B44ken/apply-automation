@@ -983,6 +983,18 @@ def answer_questions(page, profile, country, term, unhandled):
                                      or "public institution" in ll
                                      or "official" in ll):
             pick(["No"])
+        elif "debarred" in ll or "debarment" in ll or \
+                "declared ineligible" in ll:
+            # Federal debarment screen: he has never held a federal
+            # contract; truthful answer is No.
+            pick(["No"])
+        elif "future positions" in ll:
+            # "Regarding future positions..., select one of the
+            # following options": the consider-me-for-future-roles
+            # consent family - standing rule is consent.
+            pick(["Yes", "Consider me for future positions",
+                  "Please consider me for future positions",
+                  "I would like to be considered"])
         elif "previously applied" in ll or \
                 "applied on any previous occasions" in ll or \
                 "applied for employment" in ll and "previous" in ll:
