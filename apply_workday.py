@@ -898,6 +898,23 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["I request the application to be reviewed by recruiter "
                   "and automated assessment tool.",
                   "recruiter and automated assessment tool", "Yes"])
+        elif "acknowledge" in ll and ("read" in ll or "understand" in ll
+                                       or "notices" in ll or
+                                       "notice" in ll):
+            # Notice acknowledgment ("I acknowledge that I have read
+            # and understand the notices given above"): check the box
+            # or pick the acknowledgment option.
+            cb = row.locator('input[type="checkbox"]').first
+            try:
+                if cb.count() > 0:
+                    if not cb.is_checked():
+                        cb.check()
+                elif not pick(["I acknowledge", "Acknowledge",
+                               "I Certify", "I Understand", "I Agree",
+                               "Agree", "Yes"]):
+                    handled = False
+            except Exception:
+                handled = False
         elif ll.startswith("national security agreement") or \
                 ll.startswith("restricted party screening"):
             # Screening acknowledgments (Aptiv/Wind River): consent to
