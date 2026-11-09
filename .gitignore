@@ -7,3 +7,5 @@ shots/
 __pycache__/
 *.html
 *.log
+.pwprofile*/
+vault_*.json

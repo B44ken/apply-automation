@@ -253,7 +253,58 @@ DECLINE_CHOICES = ["I do not wish to answer", "I do not wish to self-identify",
                    "I do not want to answer", "Decline to self-identify",
                    "Decline", "Prefer not to say", "Prefer not to disclose",
                    "Choose not to disclose", "Not disclosed", "Not Specified",
-                   "Undeclared"]
+                   "Undeclared", "I do not wish to self identify",
+                   "Decline to self identify", "I do not wish to provide",
+                   "Do not wish to identify"]
+
+
+def pick_decline_fuzzy(container, page):
+    """Fallback decline picker: open the listbox and click the first
+    option whose normalized text reads as a decline (tenants vary the
+    wording and hyphenation beyond DECLINE_CHOICES' exact strings)."""
+    import re as _re
+
+    def norm(s):
+        return _re.sub(r"[^a-z]", "", (s or "").lower())
+
+    keys = ("notwish", "decline", "notdisclose", "prefernot",
+            "notspecified", "donotwant", "noresponse", "notanswer",
+            "wishnot", "undeclared", "notprovided", "donotwish")
+    try:
+        btn = container.locator('button[aria-haspopup="listbox"]').first
+        if btn.count() == 0:
+            return None
+        cur = btn.inner_text(timeout=600).strip()
+        if cur and cur.lower() not in ("select one", ""):
+            return cur
+        btn.scroll_into_view_if_needed(timeout=3000)
+        btn.click()
+        page.wait_for_timeout(1300)
+        opts = page.locator('[data-automation-id="promptOption"], '
+                            'li[role="option"], '
+                            '[data-automation-id="menuItem"]')
+        for i in range(opts.count()):
+            o = opts.nth(i)
+            try:
+                if not o.is_visible(timeout=250):
+                    continue
+                t = o.inner_text(timeout=300).strip()
+            except Exception:
+                continue
+            if any(k in norm(t) for k in keys):
+                o.click()
+                page.wait_for_timeout(800)
+                try:
+                    now = btn.inner_text(timeout=600).strip()
+                except Exception:
+                    now = ""
+                if now and now.lower() not in ("select one", ""):
+                    return now
+                return t
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -526,6 +577,105 @@ def answer_questions(page, profile, country, term, unhandled):
                 continue
             except Exception:
                 pass
+        # Expected graduation date (date inputs): Apr 2028.
+        if "graduation" in ll and "date" in ll:
+            try:
+                filled = False
+                for aid, val in (("dateSectionMonth-input", "04"),
+                                 ("dateSectionDay-input", "01"),
+                                 ("dateSectionYear-input", "2028")):
+                    inp = row.locator(
+                        f'input[data-automation-id="{aid}"]').first
+                    if inp.count() > 0:
+                        inp.fill(val)
+                        filled = True
+                if filled:
+                    log(f"answered graduation date: {label[:50]}")
+                    continue
+            except Exception:
+                pass
+        # GPA bucket select: his stated GPA is 3.0; pick the option
+        # that is exactly 3.0 or the range containing 3.0.
+        if "gpa" in ll:
+            try:
+                btn = row.locator('button[aria-haspopup="listbox"]').first
+                if btn.count() > 0:
+                    cur = btn.inner_text(timeout=600).strip()
+                    if cur and cur.lower() not in ("select one", ""):
+                        continue
+                    btn.click()
+                    page.wait_for_timeout(1200)
+                    opts = page.locator(
+                        '[data-automation-id="promptOption"], '
+                        'li[role="option"]')
+                    target = None
+                    for j in range(opts.count()):
+                        o = opts.nth(j)
+                        try:
+                            if not o.is_visible(timeout=250):
+                                continue
+                            t = o.inner_text(timeout=300).strip()
+                        except Exception:
+                            continue
+                        m = re.findall(r"\d\.\d+", t)
+                        if len(m) >= 2 and \
+                                float(m[0]) <= 3.0 <= float(m[1]):
+                            target = o
+                            break
+                        if t == "3.0" or (len(m) == 1 and
+                                          float(m[0]) == 3.0):
+                            target = o
+                            break
+                    if target is not None:
+                        target.click()
+                        page.wait_for_timeout(800)
+                        log(f"answered GPA bucket: {label[:50]}")
+                        continue
+                    page.keyboard.press("Escape")
+            except Exception:
+                pass
+        # Employer-segment interest select (GE Vernova): prefer
+        # Research, then Grid, then Electrification; else the first
+        # real option. Required preference field; low stakes.
+        if "segment" in ll and "interest" in ll:
+            try:
+                btn = row.locator('button[aria-haspopup="listbox"]').first
+                if btn.count() > 0:
+                    cur = btn.inner_text(timeout=600).strip()
+                    if cur and cur.lower() not in ("select one", ""):
+                        continue
+                    btn.click()
+                    page.wait_for_timeout(1200)
+                    opts = page.locator(
+                        '[data-automation-id="promptOption"], '
+                        'li[role="option"]')
+                    seen = []
+                    for j in range(opts.count()):
+                        o = opts.nth(j)
+                        try:
+                            if o.is_visible(timeout=250):
+                                seen.append((o, o.inner_text(
+                                    timeout=300).strip()))
+                        except Exception:
+                            continue
+                    pick_o = None
+                    for kw in ("research", "grid", "electrification"):
+                        for o, t in seen:
+                            if kw in t.lower():
+                                pick_o = o
+                                break
+                        if pick_o is not None:
+                            break
+                    if pick_o is None and seen:
+                        pick_o = seen[0][0]
+                    if pick_o is not None:
+                        pick_o.click()
+                        page.wait_for_timeout(800)
+                        log(f"answered segment interest: {label[:50]}")
+                        continue
+                    page.keyboard.press("Escape")
+            except Exception:
+                pass
         # Export-control citizenship screen ("For any of the countries
         # listed below: citizen / dual citizenship / permanent resident
         # / refugee status?") — his only citizenship is Canada, which is
@@ -772,6 +922,18 @@ def answer_questions(page, profile, country, term, unhandled):
                 ("cuba" in ll and "citizen" in ll):
             # Export-control sanctioned-country citizenship screen.
             pick(["No"])
+        elif "consent" in ll and ("retain" in ll or "profile" in ll
+                                  or "opportunities" in ll
+                                  or "contact you" in ll):
+            # Data-use consent (profile retention / contact about
+            # roles): First's standing rule is always consent.
+            # Tenants phrase the option verbosely (GE Vernova), so
+            # try the long forms before bare "Yes".
+            pick(["Yes, I consent", "I consent", "Yes, I agree",
+                  "Yes, I Agree", "Yes"])
+        elif "communication method" in ll or \
+                "how would you like us to contact" in ll:
+            pick(["Email", "E-mail", "Email Address"])
         elif "available if an offer" in ll or \
                 "when would you be available" in ll:
             # Student applying months ahead of a summer start: the
@@ -917,6 +1079,8 @@ def fill_disclosures(page, profile):
                                  "disability", "sex", "orientation",
                                  "hispanic", "latino"]):
             picked = set_prompt(row, page, DECLINE_CHOICES)
+            if picked is None:
+                picked = pick_decline_fuzzy(row, page)
             if picked is None and "sex" in ll:
                 # RBC precedent: required Sex field with no decline option.
                 picked = set_prompt(row, page, ["Male"])
@@ -1029,7 +1193,7 @@ def set_prompt(container, page, choices):
 
             for c in choices:
                 for o, t in visible_options():
-                    if t == c:
+                    if t == c or t == c + "s" or c == t + "s":
                         r = try_option(o, t)
                         if r:
                             return r
@@ -1293,6 +1457,9 @@ def fill_my_information(page, profile):
         "first name": profile["first_name"],
         "last name": profile["last_name"],
         "address line 1": profile["address"],
+        # No unit/suite in his address; some tenants (GE Vernova)
+        # require line 2 — "N/A" is the standard truthful entry.
+        "address line 2": "N/A",
         "city": profile["city"],
         "postal code": profile["postal_code"],
         "zip code": profile["postal_code"],
@@ -1302,7 +1469,8 @@ def fill_my_information(page, profile):
     prompt_map = {
         "phone device type": ["Mobile"],
         "how did you hear": ["Company Website", "Corporate Website",
-                             "Job Board", "Internet", "Other"],
+                             "Job Board", "Internet", "Other", "Others",
+                             "Campus Hiring", "Online"],
         "country phone code": ["Canada (+1)", "Canada", "+1"],
         "province": [profile["province"]],
         "state": [profile["province"]],
@@ -1312,7 +1480,9 @@ def fill_my_information(page, profile):
         label = container_label(container)
         cl = label.lower().rstrip("?").strip()
         if cl == "country" or cl.startswith("country/region") or \
-                cl.startswith("country / region"):
+                cl.startswith("country / region") or \
+                cl.startswith("country/territory") or \
+                cl.startswith("country / territory"):
             picked = set_prompt(container, page, [profile["country"]])
             if not picked:
                 # Native <select> fallback (some tenants render the
@@ -1341,7 +1511,9 @@ def fill_my_information(page, profile):
             continue
         ll = label.lower().rstrip("?").strip()
         if ll == "country" or ll.startswith("country/region") or \
-                ll.startswith("country / region"):
+                ll.startswith("country / region") or \
+                ll.startswith("country/territory") or \
+                ll.startswith("country / territory"):
             continue
         tkey = next((k for k in text_map if ll.startswith(k)), None)
         pkey = next((k for k in prompt_map if ll.startswith(k)), None)
@@ -1565,6 +1737,8 @@ def main():
     ap.add_argument("--term", choices=["winter", "summer"], default="summer")
     ap.add_argument("--profile", default=os.path.join(BASE, "profile.json"))
     ap.add_argument("--vault", default=os.path.join(BASE, "vault.json"))
+    ap.add_argument("--profile-dir",
+                    default=os.path.join(BASE, ".pwprofile"))
     args = ap.parse_args()
 
     with open(args.profile) as f:
@@ -1575,12 +1749,22 @@ def main():
     ensure_relay()
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
-            os.path.join(BASE, ".pwprofile"), headless=False,
+            args.profile_dir, headless=False,
             viewport={"width": 1440, "height": 900},
             proxy={"server": "http://127.0.0.1:18080"},
             ignore_https_errors=True,
             args=["--no-sandbox"])
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        # Careers pages embed LinkedIn widgets ("Apply with LinkedIn",
+        # profile-import SDKs). Those requests trigger site-access
+        # approval cards that stall runs. Block the domains outright —
+        # the applications never use them.
+        try:
+            ctx.route(
+                re.compile(r"linkedin\.com|licdn\.com"),
+                lambda route: route.abort())
+        except Exception:
+            pass
         try:
             page.goto(args.url, wait_until="domcontentloaded", timeout=120000)
             wait_ready(page)
