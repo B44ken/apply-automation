@@ -440,10 +440,21 @@ def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
         email_in.click(); email_in.fill(email); log("filled: sign-in email")
         pw_in.click(); pw_in.fill(entry["password"])
         log("filled: sign-in password")
-        click_first(page, ['[data-automation-id="signInButton"]',
-                           'button:has-text("Sign In")',
-                           '[data-automation-id="bottom-navigation-next-button"]'],
-                    "sign in", timeout=10000)
+        try:
+            click_first(
+                page, ['[data-automation-id="signInButton"]',
+                       'div[data-automation-id="click_filter"]'
+                       '[aria-label="Sign In"]',
+                       'button:has-text("Sign In")',
+                       'button:has-text("Log In")',
+                       'button[type="submit"]',
+                       '[data-automation-id="bottom-navigation-next-button"]'],
+                "sign in", timeout=10000)
+        except Exception:
+            # No recognizable submit control (Marvell): Enter in the
+            # password field submits the form natively.
+            pw_in.press("Enter")
+            log("sign-in: no click target; pressed Enter as fallback")
     except Exception as e:
         return f"sign_in_failed: {e}"
     for i in range(16):
