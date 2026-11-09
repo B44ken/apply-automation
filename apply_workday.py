@@ -959,6 +959,7 @@ def answer_questions(page, profile, country, term, unhandled):
                                    "previously been employed",
                                    "previously been directly employed",
                                    "been directly employed",
+                                   "been employed by", "employed by",
                                    "accepted an offer",
                                    "worked at", "worked for",
                                    "former employee",
