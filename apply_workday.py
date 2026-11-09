@@ -1026,6 +1026,35 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["More than 2 months after offer acceptance",
                   "Within 2 months after offer acceptance",
                   "Immediately after offer acceptance"])
+        elif "following capacity" in ll or "have not worked" in ll:
+            # Capacity-style prior-employment (Adobe): options are
+            # employment types (Employee / Intern / Vendor / Other)
+            # plus "I have not worked for X in the past." The
+            # truthful pick is the not-worked option, not Yes/No.
+            got = pick_contains(row, page, "have not worked")
+            if not got:
+                got = pick_contains(row, page, "not worked")
+            if not got:
+                try:
+                    cands = row.locator('label, [role="radio"]')
+                    for i in range(cands.count()):
+                        el = cands.nth(i)
+                        try:
+                            t = el.inner_text(timeout=300).strip()
+                        except Exception:
+                            continue
+                        if "not worked" in t.lower():
+                            el.click()
+                            page.wait_for_timeout(700)
+                            got = t
+                            break
+                except Exception:
+                    pass
+            if not got:
+                handled = False
+        elif "background check" in ll:
+            # Willingness to undergo a background check: Yes.
+            pick(["Yes"])
         elif any(k in ll for k in ["conflict", "non-compete", "noncompete",
                                    "non-competition", "non-disclosure",
                                    "non-solicit", "relative", "family member",
