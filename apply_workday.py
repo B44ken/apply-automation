@@ -447,12 +447,22 @@ def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
                                         vault_path, _depth + 1)
         pw = gen_password()
         try:
-            email_in.click(); email_in.fill(email); log("filled: create email")
-            pw_in.click(); pw_in.fill(pw); log("filled: create password")
+            # Some tenants pre-fill the email from the application
+            # context and render it DISABLED (Clio): clicking it
+            # times out. Skip the fill when it already holds his
+            # email; fill() needs no prior click on enabled inputs.
+            if email_in.is_enabled():
+                email_in.fill(email)
+            elif (email_in.input_value() or "").strip().lower() != \
+                    email.lower():
+                return "account_create_failed: email disabled with " \
+                       "a different value"
+            log("filled: create email")
+            pw_in.fill(pw); log("filled: create password")
             vf = first_visible(page, ['[data-automation-id="verifyPassword"]'],
                                2000)
             if vf is not None:
-                vf.click(); vf.fill(pw); log("filled: verify password")
+                vf.fill(pw); log("filled: verify password")
             cb = first_visible(
                 page, ['[data-automation-id="privacyConsentCheckbox"]',
                        'input[type="checkbox"]'], 2000)
