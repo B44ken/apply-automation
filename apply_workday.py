@@ -1976,12 +1976,28 @@ def main():
             resume_done = False
             last_fp = None
             stuck = 0
+            reloads = 0
             for step in range(16):
                 wait_ready(page)
                 dismiss_cookies(page)
                 shot(page, f"step{step + 1}")
                 txt = body_text(page)
                 low = txt.lower()
+                # Workday SPA error page ("Something went wrong,
+                # please refresh") renders the step shell with no
+                # controls at all (Salesforce draft). One or two
+                # reloads clear the transient case.
+                if "something went wrong" in low and \
+                        "refresh" in low and reloads < 2:
+                    reloads += 1
+                    log(f"SPA error page; reloading ({reloads})")
+                    try:
+                        page.reload(wait_until="domcontentloaded",
+                                    timeout=120000)
+                    except Exception:
+                        pass
+                    wait_ready(page)
+                    continue
                 auth = handle_auth_step(page, host, profile, vault,
                                         args.vault)
                 if auth == "handled":
