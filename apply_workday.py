@@ -2141,6 +2141,90 @@ def fill_experience(page, profile):
                     log("education: last year filled")
         except Exception:
             pass
+    # Role Description repair (Baird): a required description on
+    # the exampleco entry can parse empty. Fill it with his
+    # documented facts only, matched by the entry's fkit group.
+    try:
+        groups = {}
+        for container in field_containers(page):
+            try:
+                fkit = container.get_attribute("data-fkit-id") or ""
+            except Exception:
+                continue
+            m = re.match(r"(workExperience-\d+)-+(.*)", fkit)
+            if m:
+                groups.setdefault(m.group(1), {})[m.group(2)] = container
+        for g, fields in groups.items():
+            comp = fields.get("companyName")
+            desc = fields.get("roleDescription")
+            if comp is None or desc is None:
+                continue
+            try:
+                cin = comp.locator('input[type="text"]').first
+                cval = cin.input_value() if cin.count() else ""
+            except Exception:
+                cval = ""
+            if "exampleco" not in cval.lower():
+                continue
+            ta = desc.locator("textarea").first
+            try:
+                if ta.count() > 0 and not ta.input_value().strip():
+                    ta.fill("Founder of ExampleCo (example.dev), a "
+                            "robotics platform. Secured $X in "
+                            "funding.")
+                    log("experience: exampleco role description filled")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Skills repair (Baird): a required skills multiselect sitting
+    # at 0 items. Add his documented skills (Python, C++, ML) one
+    # at a time via the type-and-Enter search flow.
+    try:
+        for container in field_containers(page):
+            lab = container_label(container).lower()
+            if "skill" not in lab:
+                continue
+            try:
+                if container.locator(
+                        '[data-automation-id="selectedItem"]'
+                        ).count() > 0:
+                    continue
+            except Exception:
+                pass
+            inp = container.locator("input").first
+            if inp.count() == 0:
+                continue
+            for skill in ("Python", "C++", "Machine Learning"):
+                try:
+                    inp.click()
+                    inp.fill("")
+                    inp.press_sequentially(skill, delay=40)
+                    inp.press("Enter")
+                except Exception:
+                    continue
+                page.wait_for_timeout(1500)
+                opts = page.locator(
+                    '[data-automation-id="promptOption"], '
+                    'li[role="option"]')
+                for oi in range(opts.count()):
+                    o = opts.nth(oi)
+                    try:
+                        if not o.is_visible(timeout=250):
+                            continue
+                        if o.inner_text(timeout=300).strip() == skill:
+                            o.click()
+                            page.wait_for_timeout(900)
+                            log(f"skills: added {skill}")
+                            break
+                    except Exception:
+                        continue
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------- #
