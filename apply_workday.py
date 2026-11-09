@@ -1024,6 +1024,32 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["Yes", "Consider me for future positions",
                   "Please consider me for future positions",
                   "I would like to be considered"])
+        elif "specify your relationship" in ll or \
+                ("please input" in ll and "not applicable" in ll):
+            # Referral-relationship free text whose own instructions
+            # say to enter "Not Applicable" when you know no one
+            # there (Foresters) - he does not; enter exactly that.
+            filled = False
+            try:
+                ins = row.locator('input[type="text"], '
+                                  'input:not([type]), textarea')
+                for ii in range(ins.count()):
+                    cand = ins.nth(ii)
+                    try:
+                        if not cand.is_visible(timeout=300):
+                            continue
+                        if cand.input_value().strip():
+                            filled = True
+                            break
+                        cand.fill("Not Applicable")
+                        filled = True
+                        break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            if not filled:
+                handled = False
         elif "were you referred" in ll or "referred to apply" in ll or \
                 "referred by an employee" in ll:
             # No employee referral - he found the posting himself.
