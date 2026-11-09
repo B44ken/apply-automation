@@ -1814,7 +1814,8 @@ def fill_experience(page, profile):
                         timeout=500).strip() in ("", "Select One"):
                     picked = set_prompt(
                         container, page,
-                        [profile["degree"], "Bachelor's", "Bachelors"])
+                        [profile["degree"], "Bachelor's", "Bachelors",
+                         "BS", "BA"])
                     if not picked:
                         # Tenant degree lists vary ("Bachelors
                         # Degree", "Bachelor of Science", "BS"...):
