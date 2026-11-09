@@ -1194,13 +1194,35 @@ def set_prompt(container, page, choices):
                 page.wait_for_timeout(1000)
                 if chipped():
                     return t
-                # Expanded? Click the first leaf under it.
-                for o2, t2 in visible_options():
-                    if t2.startswith(t) and t2 != t:
+                # Expanded? Leaves are the options that were not in
+                # the top-level set. Prefer a leaf named under the
+                # category, then a leaf matching a choice keyword,
+                # then (for career-site categories) the first leaf.
+                top_texts = {x for _, x in top}
+                leaves = [(o2, t2) for o2, t2 in visible_options()
+                          if t2 not in top_texts]
+                for o2, t2 in leaves:
+                    if t2.startswith(t):
                         o2.click()
                         page.wait_for_timeout(1000)
                         if chipped():
                             return t2
+                for o2, t2 in leaves:
+                    tl = t2.lower()
+                    if any(k in tl for k in ("career", "website",
+                                             "job board", "online",
+                                             "other", "linkedin",
+                                             "indeed")):
+                        o2.click()
+                        page.wait_for_timeout(1000)
+                        if chipped():
+                            return t2
+                if "career" in t.lower() and leaves:
+                    o2, t2 = leaves[0]
+                    o2.click()
+                    page.wait_for_timeout(1000)
+                    if chipped():
+                        return t2
                 return None
 
             for c in choices:
