@@ -2025,6 +2025,30 @@ def main():
                 errs = page_errors(page)
                 nxt = first_visible(page, NEXT_BTN, 5000)
                 if nxt is None:
+                    # Resumed drafts can land back on the posting page
+                    # or Candidate Home after sign-in (Salesforce):
+                    # re-click Apply / Continue Application and keep
+                    # going instead of dead-ending.
+                    cont = first_visible(
+                        page, ['[data-automation-id="applyButton"]',
+                               'a:has-text("Continue Application")',
+                               'button:has-text("Continue Application")',
+                               'a:has-text("Apply")',
+                               'button:has-text("Apply")'], 3000)
+                    if cont is not None:
+                        cont.click()
+                        page.wait_for_timeout(3000)
+                        wait_ready(page)
+                        am2 = first_visible(
+                            page,
+                            ['[data-automation-id="applyManually"]',
+                             'button:has-text("Apply Manually")'], 2500)
+                        if am2 is not None:
+                            am2.click()
+                            page.wait_for_timeout(2500)
+                            wait_ready(page)
+                        log("re-clicked Apply/Continue inside the loop")
+                        continue
                     shot(page, "no_next")
                     result("blocked", reason="no_next_button",
                            errors=errs, url=args.url)
