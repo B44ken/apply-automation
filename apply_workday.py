@@ -333,6 +333,22 @@ def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
             break
         page.wait_for_timeout(1200)
     if email_in is None or pw_in is None:
+        # SSO chooser interstitial (KLA): Apple/Google/LinkedIn/email
+        # buttons and no form yet. Choose email, then re-detect.
+        seb = first_visible(
+            page, ['[data-automation-id="SignInWithEmailButton"]',
+                   'button:has-text("Sign in with email")',
+                   'a:has-text("Sign in with email")'], 2000)
+        if seb is not None:
+            try:
+                seb.click()
+                log("chose 'Sign in with email' at the SSO chooser")
+                page.wait_for_timeout(3000)
+                wait_ready(page)
+                return handle_auth_step(page, host, profile, vault,
+                                        vault_path, _depth + 1)
+            except Exception:
+                pass
         return "not_auth"
     email = profile["email"]
     entry = vault.get(host)
