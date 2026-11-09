@@ -1709,6 +1709,45 @@ def fill_experience(page, profile):
         if len(empties) == 1:
             empties[0].fill("example.dev")
             log("fixed blank company -> example.dev")
+            # The same parse gap leaves this entry's Job Title and
+            # From date empty on some tenants (Adobe). The resume
+            # states: Founder, example.dev, May 2026 - Present.
+            # Transcribe exactly that for the first empty fields.
+            try:
+                for container in field_containers(page):
+                    try:
+                        aid2 = container.get_attribute(
+                            "data-automation-id") or ""
+                    except Exception:
+                        continue
+                    sfx = aid2.replace("formField-", "")
+                    if sfx == "jobTitle":
+                        inp = container.locator(
+                            'input[type="text"]').first
+                        if inp.count() > 0 and \
+                                not inp.input_value().strip():
+                            inp.fill("Founder")
+                            log("experience: job title -> Founder")
+                    elif sfx in ("startDate", "fromDate"):
+                        mo = container.locator(
+                            'input[data-automation-id='
+                            '"dateSectionMonth-input"]').first
+                        yr = container.locator(
+                            'input[data-automation-id='
+                            '"dateSectionYear-input"]').first
+                        if mo.count() > 0 and \
+                                not mo.input_value().strip():
+                            mo.fill("05")
+                            yr.fill("2026")
+                            log("experience: from -> 05/2026")
+                    elif "currently" in sfx.lower():
+                        cb = container.locator(
+                            'input[type="checkbox"]').first
+                        if cb.count() > 0 and not cb.is_checked():
+                            cb.check()
+                            log("experience: currently-work checked")
+            except Exception:
+                pass
         elif len(empties) > 1:
             log(f"WARNING: {len(empties)} blank company fields; "
                 "not guessing")
