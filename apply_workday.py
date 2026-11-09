@@ -973,6 +973,13 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["No"])
         elif "relocat" in ll:
             pick(["Yes"])
+        elif "visa type" in ll:
+            # "Please select your current visa type" (shown after a
+            # Yes to sponsorship): he will be on a J-1 for US
+            # internships - his stated fact (2026-09-19).
+            if not pick(["J-1", "J1", "J-1 Visa"]):
+                if not pick_contains(row, page, "J-1"):
+                    handled = False
         elif "sponsor" in ll:
             pick(["Yes"] if country == "US" else ["No"])
         elif "canadian" in ll and ("citizen" in ll
@@ -1052,11 +1059,18 @@ def answer_questions(page, profile, country, term, unhandled):
                     for ii in range(ins.count()):
                         cand = ins.nth(ii)
                         try:
-                            if cand.is_visible(timeout=300) and \
-                                    not cand.input_value().strip():
-                                cand.fill(loc)
+                            if not cand.is_visible(timeout=300):
+                                continue
+                            if cand.input_value().strip():
+                                # Already answered on an earlier
+                                # pass - that is success, not a miss
+                                # (the validation-retry loop re-enters
+                                # here with the field filled).
                                 filled = True
                                 break
+                            cand.fill(loc)
+                            filled = True
+                            break
                         except Exception:
                             continue
                 except Exception:
