@@ -259,14 +259,28 @@ DECLINE_CHOICES = ["I do not wish to answer", "I do not wish to self-identify",
 # --------------------------------------------------------------------------- #
 # Account: create or sign in
 # --------------------------------------------------------------------------- #
-def handle_auth_step(page, host, profile, vault, vault_path):
+def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
     """Handle a combined Create Account / Sign In step inside the apply
     flow. Returns 'handled', 'not_auth', or a blocked-reason string."""
-    email_in = first_visible(
-        page, ['[data-automation-id="email"]', 'input[type="email"]'], 2500)
-    pw_in = first_visible(
-        page, ['[data-automation-id="password"]', 'input[type="password"]'],
-        2500)
+    if _depth > 3:
+        return "auth_recursion_cap"
+    # Poll briefly: some tenants (HPE) render the auth form in stages,
+    # email first and the password field seconds later; a single 2.5s
+    # probe misreads that as "not an auth step" and the main loop then
+    # treats the password fields as unanswered questions.
+    email_in = pw_in = None
+    for _ in range(6):
+        if email_in is None:
+            email_in = first_visible(
+                page, ['[data-automation-id="email"]',
+                       'input[type="email"]'], 1200)
+        if pw_in is None:
+            pw_in = first_visible(
+                page, ['[data-automation-id="password"]',
+                       'input[type="password"]'], 1200)
+        if email_in is not None and pw_in is not None:
+            break
+        page.wait_for_timeout(1200)
     if email_in is None or pw_in is None:
         return "not_auth"
     email = profile["email"]
@@ -275,20 +289,48 @@ def handle_auth_step(page, host, profile, vault, vault_path):
     # create-account form; email+password without it is a sign-in form.
     # (Page headings/nav are polluted by "Create an Account" links and
     # caused a create/sign-in thrash loop on Ciena, 2026-11-08.)
-    verify_in = first_visible(page, ['[data-automation-id="verifyPassword"]'],
-                              1500)
+    verify_in = first_visible(
+        page, ['[data-automation-id="verifyPassword"]',
+               '[data-automation-id="verifyNewPassword"]',
+               '[data-automation-id="confirmPassword"]'], 1500)
+    if verify_in is None:
+        # Generic structural fallback: two visible password inputs on
+        # one form means create-account (HPE's verify field carries no
+        # standard automation id).
+        try:
+            pwds = page.locator('input[type="password"]:visible')
+            if pwds.count() >= 2:
+                verify_in = pwds.nth(1)
+        except Exception:
+            pass
     if verify_in is not None:
         # ---- create account ----
         if entry:
-            # Account already exists in vault: switch to the Sign In tab.
+            # Account already exists in vault: switch to the Sign In
+            # form via the in-flow signInLink (below the create form).
+            # The generic "Sign In" button selector matches the top
+            # utility button instead, which loops the flow (HPE).
             tab = first_visible(
-                page, ['[data-automation-id="signInTab"]',
+                page, ['[data-automation-id="signInLink"]',
+                       '[data-automation-id="signInTab"]',
+                       'a:has-text("Sign In")',
                        'button:has-text("Sign In")'], 2500)
             if tab is not None:
-                tab.click()
+                try:
+                    tab.click(timeout=8000)
+                except Exception:
+                    # A stray overlay (click-outside-close layer) can
+                    # intercept the tab click (HPE, 2026-11-08): clear
+                    # it and force the click.
+                    try:
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(500)
+                        tab.click(force=True, timeout=8000)
+                    except Exception:
+                        pass
                 page.wait_for_timeout(1500)
                 return handle_auth_step(page, host, profile, vault,
-                                        vault_path)
+                                        vault_path, _depth + 1)
         pw = gen_password()
         try:
             email_in.click(); email_in.fill(email); log("filled: create email")
@@ -340,7 +382,8 @@ def handle_auth_step(page, host, profile, vault, vault_path):
             link.click()
             page.wait_for_timeout(2500)
             wait_ready(page)
-            return handle_auth_step(page, host, profile, vault, vault_path)
+            return handle_auth_step(page, host, profile, vault,
+                                    vault_path, _depth + 1)
         return "account_required_no_vault_password"
     try:
         email_in.click(); email_in.fill(email); log("filled: sign-in email")
@@ -352,13 +395,24 @@ def handle_auth_step(page, host, profile, vault, vault_path):
                     "sign in", timeout=10000)
     except Exception as e:
         return f"sign_in_failed: {e}"
-    for _ in range(16):
+    for i in range(16):
         page.wait_for_timeout(3000)
         if first_visible(page, ['[data-automation-id="password"]',
                                 'input[type="password"]'], 1500) is None:
             log("signed in with vault password")
             return "handled"
-    return "vault_password_rejected"
+        if i == 2:
+            # Some tenants render the sign-in form twice (hidden +
+            # visible); the button click can land on the hidden copy
+            # and submit nothing, with no error shown (HPE). Enter in
+            # the password field submits the real form natively.
+            try:
+                pw_in.press("Enter")
+                log("sign-in: pressed Enter as submit fallback")
+            except Exception:
+                pass
+    errs = page_errors(page)
+    return f"vault_password_rejected: {errs}"
 
 
 # --------------------------------------------------------------------------- #
@@ -398,6 +452,10 @@ def answer_questions(page, profile, country, term, unhandled):
                 continue
         ll = label.lower()
         if not ll:
+            continue
+        # Password fields belong to the auth step (handle_auth_step),
+        # never to the question engine.
+        if "password" in ll:
             continue
         # File-upload fields are document uploads, not questions.
         try:
