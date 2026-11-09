@@ -1095,7 +1095,26 @@ def answer_questions(page, profile, country, term, unhandled):
             # employment types (Employee / Intern / Vendor / Other)
             # plus "I have not worked for X in the past." The
             # truthful pick is the not-worked option, not Yes/No.
-            got = pick_contains(row, page, "have not worked")
+            got = pick_search_contains(row, page, "not worked",
+                                       "not worked")
+            if not got:
+                # Native <select> rendering of the same question.
+                try:
+                    sel = row.locator("select").first
+                    if sel.count() > 0:
+                        opts = sel.locator("option")
+                        for oi in range(opts.count()):
+                            t = opts.nth(oi).inner_text(
+                                timeout=300).strip()
+                            if "not worked" in t.lower():
+                                sel.select_option(index=oi)
+                                page.wait_for_timeout(600)
+                                got = t
+                                break
+                except Exception:
+                    pass
+            if not got:
+                got = pick_contains(row, page, "have not worked")
             if not got:
                 got = pick_contains(row, page, "not worked")
             if not got:
@@ -1769,6 +1788,47 @@ def fill_my_information(page, profile):
             picked = set_prompt(container, page, prompt_map[pkey])
             if picked:
                 log(f"my-info prompt '{label}': {picked}")
+
+
+def pick_search_contains(container, page, type_text, needle):
+    """Search-prompt variant of pick_contains: type `type_text` into
+    the container's input, press Enter to load suggestions, click the
+    first option containing `needle`. For tenants (Adobe) whose
+    option lists are search prompts rather than plain listboxes."""
+    try:
+        inp = container.locator("input").first
+        if inp.count() == 0:
+            return None
+        inp.click()
+        try:
+            inp.fill("")
+        except Exception:
+            pass
+        inp.press_sequentially(type_text, delay=40)
+        try:
+            inp.press("Enter")
+        except Exception:
+            pass
+        for _ in range(8):
+            page.wait_for_timeout(800)
+            opts = page.locator(
+                '[data-automation-id="promptOption"], li[role="option"]')
+            for oi in range(opts.count()):
+                o = opts.nth(oi)
+                try:
+                    if not o.is_visible(timeout=250):
+                        continue
+                    t = o.inner_text(timeout=300).strip()
+                except Exception:
+                    continue
+                if needle.lower() in t.lower():
+                    o.click()
+                    page.wait_for_timeout(900)
+                    return t
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    return None
 
 
 def pick_search_multiselect(container, page, choices):
