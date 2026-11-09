@@ -1712,20 +1712,39 @@ def fill_experience(page, profile):
                     empties.append(legacy.nth(i))
             except Exception:
                 pass
+        # Does a exampleco entry exist (just repaired, or already
+        # filled on a resumed draft)? Its parse-gap companions
+        # (Job Title / From) are repaired below either way.
+        exampleco_entry = len(empties) == 1
+        if not exampleco_entry:
+            try:
+                for container in field_containers(page):
+                    aid = container.get_attribute(
+                        "data-automation-id") or ""
+                    if aid.replace("formField-", "") == "companyName":
+                        inp = container.locator(
+                            'input[type="text"]').first
+                        if inp.count() > 0 and "exampleco" in \
+                                inp.input_value().lower():
+                            exampleco_entry = True
+                            break
+            except Exception:
+                pass
         if len(empties) == 1:
             empties[0].fill("example.dev")
             log("fixed blank company -> example.dev")
+        if exampleco_entry:
             # The same parse gap leaves this entry's Job Title and
             # From date empty on some tenants (Adobe). The resume
             # states: Founder, example.dev, May 2026 - Present.
             # Transcribe exactly that for the first empty fields.
-            try:
-                for container in field_containers(page):
-                    try:
-                        aid2 = container.get_attribute(
-                            "data-automation-id") or ""
-                    except Exception:
-                        continue
+            for container in field_containers(page):
+                # Per-container try: one bad field must not abort
+                # the remaining repairs (a hidden-checkbox check()
+                # throw killed the From fill on Adobe).
+                try:
+                    aid2 = container.get_attribute(
+                        "data-automation-id") or ""
                     sfx = aid2.replace("formField-", "")
                     if sfx == "jobTitle":
                         inp = container.locator(
@@ -1750,11 +1769,11 @@ def fill_experience(page, profile):
                         cb = container.locator(
                             'input[type="checkbox"]').first
                         if cb.count() > 0 and not cb.is_checked():
-                            cb.check()
+                            cb.check(force=True, timeout=3000)
                             log("experience: currently-work checked")
-            except Exception:
-                pass
-        elif len(empties) > 1:
+                except Exception:
+                    continue
+        if len(empties) > 1:
             log(f"WARNING: {len(empties)} blank company fields; "
                 "not guessing")
     except Exception:
