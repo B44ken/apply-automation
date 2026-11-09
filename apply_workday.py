@@ -470,6 +470,7 @@ def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
                 cb.check(); log("checked privacy consent")
             click_first(
                 page, ['div[data-automation-id="click_filter"][aria-label="Create Account"]',
+                       'div[data-automation-id="click_filter"][aria-label="Submit"]',
                        '[data-automation-id="createAccountSubmitButton"]',
                        '[data-automation-id="bottom-navigation-next-button"]'],
                 "create account", timeout=10000)
