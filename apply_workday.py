@@ -756,9 +756,29 @@ def answer_questions(page, profile, country, term, unhandled):
         elif "work permit" in ll or "residency permit" in ll:
             pick(["No"] if country == "US" else ["Yes"])
         elif "government" in ll and ("employment" in ll or "worked" in ll
+                                     or "employee" in ll
                                      or "public institution" in ll
                                      or "official" in ll):
             pick(["No"])
+        elif "previously applied" in ll or \
+                "applied on any previous occasions" in ll or \
+                "applied for employment" in ll and "previous" in ll:
+            # No prior application to this employer on record.
+            pick(["No"])
+        elif "terminated or asked to resign" in ll or \
+                "been terminated" in ll:
+            pick(["No"])
+        elif "dual citizenship" in ll or "citizen of, or" in ll or \
+                ("cuba" in ll and "citizen" in ll):
+            # Export-control sanctioned-country citizenship screen.
+            pick(["No"])
+        elif "available if an offer" in ll or \
+                "when would you be available" in ll:
+            # Student applying months ahead of a summer start: the
+            # truthful bucket is the longest one (Micron questionnaire).
+            pick(["More than 2 months after offer acceptance",
+                  "Within 2 months after offer acceptance",
+                  "Immediately after offer acceptance"])
         elif any(k in ll for k in ["conflict", "non-compete", "noncompete",
                                    "non-competition", "non-disclosure",
                                    "non-solicit", "relative", "family member",
