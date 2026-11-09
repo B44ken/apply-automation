@@ -78,7 +78,11 @@ def vault_save(path, vault):
     os.replace(tmp, path)
 
 
-def gen_password(length=20):
+def gen_password(length=16):
+    # 16 chars: some tenants silently cap password length on the
+    # create form, which would make a longer generated password
+    # unrecoverable at sign-in (suspected in the HPE/Tencent/
+    # Marvell/KLA create-then-sign-in-rejected pattern).
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     while True:
         pw = "".join(secrets.choice(alphabet) for _ in range(length))
