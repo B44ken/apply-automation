@@ -444,7 +444,15 @@ def handle_auth_step(page, host, profile, vault, vault_path, _depth=0):
     # ---- sign in ----
     if not entry:
         # Switch to the create-account form via the page's link, if any.
-        link = first_visible(page, ['a:has-text("Create Account")'], 2500)
+        # ("Create an Account" does not contain "Create Account" as a
+        # substring — both phrasings must be listed, KLA uses the
+        # former.)
+        link = first_visible(
+            page, ['[data-automation-id="createAccountLink"]',
+                   'a:has-text("Create an Account")',
+                   'a:has-text("Create Account")',
+                   'button:has-text("Create an Account")',
+                   'button:has-text("Create Account")'], 2500)
         if link is not None:
             link.click()
             page.wait_for_timeout(2500)
