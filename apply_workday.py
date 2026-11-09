@@ -293,6 +293,18 @@ def pick_contains(container, page, needle):
     return None
 
 
+def city_from_posting_url(url):
+    """Workday posting URLs look like .../job/<LocationSlug>/<Title>.
+    The location slug's last '---' segment is the city ('California---
+    San-Francisco' -> 'San Francisco'; 'San-Jose' -> 'San Jose')."""
+    try:
+        parts = urlparse(url).path.split("/")
+        slug = parts[parts.index("job") + 1]
+        return slug.split("---")[-1].replace("-", " ").strip()
+    except Exception:
+        return ""
+
+
 def pick_decline_fuzzy(container, page):
     """Fallback decline picker: open the listbox and click the first
     option whose normalized text reads as a decline (tenants vary the
@@ -1026,6 +1038,32 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["More than 2 months after offer acceptance",
                   "Within 2 months after offer acceptance",
                   "Immediately after offer acceptance"])
+        elif "school location" in ll:
+            # Free-text school city/state (Salesforce: "City, ST"
+            # format - spell out the city, abbreviate the province).
+            loc = profile.get("school_location", "")
+            filled = False
+            if loc and has_text:
+                try:
+                    tin.fill(loc)
+                    filled = True
+                except Exception:
+                    pass
+            if not filled:
+                handled = False
+        elif "preferred location" in ll:
+            # Preferred-location select: the posting's own city is
+            # the truthful top choice (options spell it "City, ST",
+            # which a contains-match covers).
+            city = city_from_posting_url(profile.get("posting_url", ""))
+            got = pick_contains(row, page, city) if city else None
+            if not got:
+                handled = False
+        elif "postgraduate" in ll or "post-graduate" in ll or \
+                "graduate degree following" in ll:
+            # No postgraduate enrollment is planned after the term;
+            # he returns to finish the BSc. Truthful answer: No.
+            pick(["No"])
         elif "following capacity" in ll or "have not worked" in ll:
             # Capacity-style prior-employment (Adobe): options are
             # employment types (Employee / Intern / Vendor / Other)
@@ -1949,6 +1987,7 @@ def main():
 
     with open(args.profile) as f:
         profile = json.load(f)
+    profile["posting_url"] = args.url
     vault = vault_load(args.vault)
     host = urlparse(args.url).hostname or ""
 
