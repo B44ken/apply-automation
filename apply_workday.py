@@ -1014,6 +1014,10 @@ def answer_questions(page, profile, country, term, unhandled):
             pick(["Yes", "Consider me for future positions",
                   "Please consider me for future positions",
                   "I would like to be considered"])
+        elif "were you referred" in ll or "referred to apply" in ll or \
+                "referred by an employee" in ll:
+            # No employee referral - he found the posting himself.
+            pick(["No"])
         elif "previously applied" in ll or \
                 "applied on any previous occasions" in ll or \
                 "applied for employment" in ll and "previous" in ll:
