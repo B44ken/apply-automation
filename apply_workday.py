@@ -1804,6 +1804,20 @@ def main():
             except Exception:
                 pass
             dismiss_cookies(page)
+            # Some tenants (Marvell, KLA) answer the Apply click with
+            # an in-page chooser dialog: "Apply Manually" vs "Use My
+            # Last Application". Nothing navigates until it is answered
+            # (the step loop then dead-ends at no_next_button on the
+            # posting page). Always choose Apply Manually.
+            am = first_visible(
+                page, ['[data-automation-id="applyManually"]',
+                       'button:has-text("Apply Manually")',
+                       'a:has-text("Apply Manually")'], 4000)
+            if am is not None:
+                am.click()
+                page.wait_for_timeout(3000)
+                wait_ready(page)
+                log("chose 'Apply Manually' from the apply chooser")
             # Some postings show an "Autofill with Resume" choice first.
             af = first_visible(
                 page, ['[data-automation-id="autofillWithResume"]',
