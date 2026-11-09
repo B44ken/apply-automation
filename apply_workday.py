@@ -647,8 +647,11 @@ def answer_questions(page, profile, country, term, unhandled):
                 continue
             except Exception:
                 pass
-        # Expected graduation date (date inputs): Apr 2028.
-        if "graduation" in ll and "date" in ll:
+        # Expected graduation / degree-completion date (date
+        # inputs): Apr 2028, 1st of the month (Mastercard's phrasing
+        # instructs exactly that convention).
+        if ("graduation" in ll or "complete your current degree" in ll
+                or "degree completion" in ll) and "date" in ll:
             try:
                 filled = False
                 for aid, val in (("dateSectionMonth-input", "04"),
