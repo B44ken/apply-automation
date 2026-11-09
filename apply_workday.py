@@ -1788,9 +1788,21 @@ def main():
                 shot(page, "no_apply")
                 result("blocked", reason="no_apply_button", url=args.url)
                 return 3
+            pages_before = len(ctx.pages)
             apply_btn.click()
             page.wait_for_timeout(3000)
             wait_ready(page)
+            # Some tenants (Marvell, KLA) open the application in a
+            # NEW TAB from the Apply click; staying on the posting tab
+            # dead-ends at no_next_button. Follow the new tab.
+            try:
+                if len(ctx.pages) > pages_before:
+                    page = ctx.pages[-1]
+                    page.wait_for_timeout(1500)
+                    wait_ready(page)
+                    log("apply opened a new tab; switched to it")
+            except Exception:
+                pass
             dismiss_cookies(page)
             # Some postings show an "Autofill with Resume" choice first.
             af = first_visible(
