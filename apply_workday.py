@@ -258,6 +258,37 @@ DECLINE_CHOICES = ["I do not wish to answer", "I do not wish to self-identify",
                    "Do not wish to identify"]
 
 
+def pick_contains(container, page, needle):
+    """Open a listbox and click the first visible option whose text
+    contains `needle` (case-insensitive). Returns the option text."""
+    try:
+        btn = container.locator('button[aria-haspopup="listbox"]').first
+        if btn.count() == 0:
+            return None
+        btn.scroll_into_view_if_needed(timeout=3000)
+        btn.click()
+        page.wait_for_timeout(1300)
+        opts = page.locator('[data-automation-id="promptOption"], '
+                            'li[role="option"], '
+                            '[data-automation-id="menuItem"]')
+        for i in range(opts.count()):
+            o = opts.nth(i)
+            try:
+                if not o.is_visible(timeout=250):
+                    continue
+                t = o.inner_text(timeout=300).strip()
+            except Exception:
+                continue
+            if needle.lower() in t.lower():
+                o.click()
+                page.wait_for_timeout(800)
+                return t
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    return None
+
+
 def pick_decline_fuzzy(container, page):
     """Fallback decline picker: open the listbox and click the first
     option whose normalized text reads as a decline (tenants vary the
@@ -1716,6 +1747,13 @@ def fill_experience(page, profile):
                     picked = set_prompt(
                         container, page,
                         [profile["degree"], "Bachelor's", "Bachelors"])
+                    if not picked:
+                        # Tenant degree lists vary ("Bachelors
+                        # Degree", "Bachelor of Science", "BS"...):
+                        # any option naming a bachelor's degree is
+                        # the truthful pick for a BSc student.
+                        picked = pick_contains(container, page,
+                                               "bachelor")
                     log(f"education: degree {picked}")
             elif suffix == "fieldOfStudy":
                 # Tenants name this list differently: Altera offers
